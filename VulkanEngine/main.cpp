@@ -128,6 +128,7 @@ private:
 				break;
 			}
 		}
+
 		if (physicalDevice == VK_NULL_HANDLE) {
 			throw std::runtime_error("failed to find any suitable!"); // GPU had vulkan support, but didn't support all Vulkan features that we use
 		}
