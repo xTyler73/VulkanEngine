@@ -96,7 +96,8 @@ private:
 		createInfo.pEnabledFeatures = &deviceFeatures;
 
 		// similar to VkInstanceCreateInfo - we must specify extensions and validation layers.
-		createInfo.enabledExtensionCount = 0;
+		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()); // enable the "VK_KHR_swapchain" extension
+		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 		if (enableValidationLayers) {
 			createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size()); // newer versions of Vulkan = there is no longer a distinction between instance and device specific validation layers,
 			createInfo.ppEnabledLayerNames = validationLayers.data(); // so these 2 fields of VkDeviceCreateInfo are ignored, but set them anyway to be compatible with older implementations
@@ -152,8 +153,68 @@ private:
 		std::cout << deviceProperties.deviceName;*/
 		// could sort all GPUs by some score and pick best one, or allow user to choose.
 
+
 		QueueFamilyIndices indices = findQueueFamilies(device);
-		return indices.isComplete();
+		
+		bool extensionsSupported = checkDeviceExtensionSupport(device);
+
+		// swap chain is sufficient enough for us if there is at least one supported image format and one supported presentation mode given the window surface we have:
+		bool swapChainAdequate = false;
+		if (extensionsSupported) { // important to only query for swap chain support after verifying the extension is available
+			SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
+			swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
+		}
+
+		return indices.isComplete() && extensionsSupported && swapChainAdequate;
+	}
+
+	const std::vector<const char*> deviceExtensions = { // list of required device extensions, similar to the list of validation layers we want to enable
+			VK_KHR_SWAPCHAIN_EXTENSION_NAME // "VK_KHR_swapchain"
+	};
+
+	// checks to make sure GPU is capable of creating a swap chain. by default the availability of a presentation queue implies that the swap chain extension must be supported, but still good to be explicit - we do still have to enable the extension regardless tho
+	bool checkDeviceExtensionSupport(VkPhysicalDevice device) {
+		uint32_t extensionCount;
+		vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+		std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+		vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+		std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+
+		for (const auto& extension : availableExtensions) {
+			requiredExtensions.erase(extension.extensionName); // enumerate the extensions and check if all of the requied extensions are amongst them
+		}
+		return requiredExtensions.empty();
+	}
+
+	struct SwapChainSupportDetails {
+		VkSurfaceCapabilitiesKHR capabilities; // basic surface capabilities - min/max number of images in a swap chain, min/max width and height of images
+		std::vector<VkSurfaceFormatKHR> formats; // surface formats - pixel format, color space
+		std::vector<VkPresentModeKHR> presentModes; // available presentation modes
+	};
+
+	// populates and returns SwapChainSupportDetails struct with supported image formats/supported presentation modes (if any)
+	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) {
+		SwapChainSupportDetails details;
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities); // takes the VkPhysicalDevice and VkSurfaceKHR into account when determining the supported capabilites. all support querying functions have these 2 params as they're core components of the swap chain
+		
+		// query supported surface formats:
+		uint32_t formatCount;
+		vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
+		if (formatCount != 0) {
+			details.formats.resize(formatCount); // resize vector to hold all available formats
+			vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
+		}
+
+		// query supported presentation modes:
+		uint32_t presentModeCount;
+		vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
+		if (presentModeCount) {
+			details.presentModes.resize(presentModeCount); // resize vector to hold all available formats
+			vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
+		}
+
+		return details; // all details are in the struct now for isDeviceSuitable()
 	}
 
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
@@ -180,7 +241,6 @@ private:
 			if (presentSupport) {
 				indices.presentFamily = i;
 			}
-
 
 			if (indices.isComplete()) {
 				break;
