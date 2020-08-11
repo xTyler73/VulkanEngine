@@ -5,10 +5,11 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
+#include <cstdint>
 
 #include <vector>
 #include <optional> // c++17 data structure - wrapper that contains no value until something is assigned to it. check by calling .has_value(), using to distinguish between the case of a value existing or not
-
+#include <algorithm> // for std::min/max functions
 #include <set>
 
 const uint32_t WIDTH = 800;
@@ -66,6 +67,73 @@ private:
 		createSurface();
 		pickPhysicalDevice();
 		createLogicalDevice();
+		createSwapChain();
+	}
+
+	VkSwapchainKHR swapChain;
+	std::vector<VkImage> swapChainImages; // for storing the handles of the VkImage's in it. images were created by the implementation for the swap chain itself, so they'll get cleaned up with swapChain, without needing to clean up this
+	VkFormat swapChainImageFormat;
+	VkExtent2D swapChainExtent;
+	void createSwapChain() {
+		SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
+
+		VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
+		VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
+		VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+
+		// specify how many images we want to have in the swap chain: .minImageCount is the minimum the implementation requires to functions
+		uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1; // +1 (at least) more than the minimum so that we don't have to wait on the driver to complete internal operations before we can acquire another image to render to
+		if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) { // make sure we don't exceed the maximum number of images though. 0 is special value that means there is no maximum
+			imageCount = swapChainSupport.capabilities.maxImageCount;
+		}
+
+		VkSwapchainCreateInfoKHR createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+		createInfo.surface = surface; // tie the swap chain to the surface
+
+		createInfo.minImageCount = imageCount;
+		createInfo.imageFormat = surfaceFormat.format;
+		createInfo.imageColorSpace = surfaceFormat.colorSpace;
+		createInfo.imageExtent = extent;
+		createInfo.imageArrayLayers = 1; // the amount of layers each image consists of. is always 1 unless developing a stereoscopic 3D application
+		createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // imageUsage specifies what kind of operations we'll use the images in the swap chain for. rendering directly to them so they're used as a color attachment
+		// if we wanted to use post processing, we would use VK_IMAGE_USAGE_TRANSFER_DST_BIT to render images to a separate image first. and use a memory operation to xfer the rendered image to a swap chain image
+
+
+		// specify how to handle swap chain images that will be used across different/same queue families:
+		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+		uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+		if (indices.graphicsFamily != indices.presentFamily) { // queue families differ
+			createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT; // an image is used by one queue family at a time and ownership must be explcitily xferred before using it in another queue family. best perf option
+			// CONCURRENT mode requires us to specify in advance (between at least 2 distinct queue families) which queue families ownership will be shared using these 2 parameters:
+			createInfo.queueFamilyIndexCount = 2;
+			createInfo.pQueueFamilyIndices = queueFamilyIndices;
+		} else { // graphics queue family and presentation view family are the same, which will be the case on most hardware
+			createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; // images can be used across multiple queue families without explicit ownership xfers
+			createInfo.queueFamilyIndexCount = 0; // optional
+			createInfo.pQueueFamilyIndices = nullptr; // optional
+		}
+
+		createInfo.preTransform = swapChainSupport.capabilities.currentTransform; // no transformation to images in the swap chain. capabilities.supportedTransforms may support things like 90 degree CW rotation, horiz flip, etc
+		createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // the alpha channel that should be used for blending with other windows in the window system. almost always want to ignore the alpha channel, so using OPAQUE
+
+		createInfo.presentMode = presentMode;
+		createInfo.clipped = VK_TRUE; // true means that we don't care about the colour of pixels that are obscured (eg another window is in front of them). clipping gives best perf. false only if we really need to read those pixels back and get predictable results
+
+		createInfo.oldSwapchain = VK_NULL_HANDLE; // TODO: old swap chain can become invalid/unoptimized while app is running (eg if window is resized). swap chain needs to be remade from scrath, with a reference to the old one assigned here. for now assume we only ever create 1
+
+		if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create swap chain!");
+		}
+
+
+		// we only specified a minimum number of images in the swap chain, so the implementation is allowed to create a swap chain with more. so,
+		vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr); // first query the final number of images
+		swapChainImages.resize(imageCount); // resize the container
+		vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data()); // now retrieve handles
+
+		swapChainImageFormat = surfaceFormat.format;
+		swapChainExtent = extent;
 	}
 
 	VkDevice device; // logical device handle to interface with physicalDevice
@@ -155,7 +223,7 @@ private:
 
 
 		QueueFamilyIndices indices = findQueueFamilies(device);
-		
+
 		bool extensionsSupported = checkDeviceExtensionSupport(device);
 
 		// swap chain is sufficient enough for us if there is at least one supported image format and one supported presentation mode given the window surface we have:
@@ -197,7 +265,7 @@ private:
 	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) {
 		SwapChainSupportDetails details;
 		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities); // takes the VkPhysicalDevice and VkSurfaceKHR into account when determining the supported capabilites. all support querying functions have these 2 params as they're core components of the swap chain
-		
+
 		// query supported surface formats:
 		uint32_t formatCount;
 		vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
@@ -216,6 +284,44 @@ private:
 
 		return details; // all details are in the struct now for isDeviceSuitable()
 	}
+
+	// Find the best possible surface format (color depth) for the swap chain when swapChainAdequate is true in isDeviceSuitable()
+	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+		for (const auto& availableFormat : availableFormats)
+			if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) // preferred combo
+				return availableFormat;
+		return availableFormats[0]; // if preffered combo doesn't exit, just return first one. could add ranking logic, TODO
+	}
+
+	// Find the best possible presentation mode (conditions for "swapping" images to the screen) for the swap chain when swapChainAdequate is true in isDeviceSuitable()
+	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+		/* possible values are:
+		* VK_PRESENT_MODE_IMMEDIATE_KHR - images submitted to app are transferred to the screen right away. may cause tearing
+		* VK_PRESENT_MODE_FIFO_KHR - this is v sync, when the display is refreshed it takes an image from the front of the queue and the program inserts rendered images at the back of the queue (if queue is full, program must wait)
+		* VK_PRESENT_MODE_RELAXED_KHR - similar to FIFO, but if the application was late and the queue is empty at the last v blank, the image is transferred when it finally arrives. may cause tearing
+		* VK_PRESENT_MODE_MAILBOX_KHR - similar to FIFO, but instead of blocking the app when the queue is full, the images that are already queued are replaced with the newer ones. can be used to implement triple buffering
+		*/
+		for (const auto& availablePresentMode : availablePresentModes)
+			if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) // triple buffering to avoid tearing and have low latency by rendering new images that are as up to date as possible at the v blank
+				return availablePresentMode;
+		return VK_PRESENT_MODE_FIFO_KHR; // this is the only mode guaranteed to be available, so return it as a last resort
+	}
+
+	// Find the best possible swap extent (resolution of images in the swap chain) for the swap chain when swapChainAdequate is true in isDeviceSuitable()
+	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+		if (capabilities.currentExtent.width != UINT32_MAX) { // the resolution of the swap chain images is almost always exactly equal to the resolution of the window that we're drawing to
+			return capabilities.currentExtent;
+		}
+		// width is == to UINT32_MAX here, which is a special value for some window managers that allow us to differ the res of the swap chain images and res of the window.
+		// so clamp WIDTH and HEIGHT to the min/max extents that are supported by the implementation by picking the res that best matches the window within the minImageExtent and maxImageExtent bounds
+		VkExtent2D actualExtent = { WIDTH,HEIGHT };
+		actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
+		actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
+		return actualExtent;
+
+	}
+
+
 
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
 		QueueFamilyIndices indices;
@@ -401,6 +507,8 @@ private:
 	}
 
 	void cleanup() {
+		vkDestroySwapchainKHR(device, swapChain, nullptr);
+
 		vkDestroyDevice(device, nullptr); // the logical device that was interfacing with the physical device
 
 		if (enableValidationLayers) {
