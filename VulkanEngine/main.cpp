@@ -68,6 +68,38 @@ private:
 		pickPhysicalDevice();
 		createLogicalDevice();
 		createSwapChain();
+		createImageViews();
+	}
+
+	std::vector<VkImageView> swapChainImageViews; // to use any VkImage (including those in the swap chain) in the render pipeline, we have to create a VkImageView object for each one, so store them.
+	// creates a basic image view for every image in the swap chain so that we can use them as color targets later on
+	void createImageViews() {
+		swapChainImageViews.resize(swapChainImages.size()); // fit all of the image views
+		for (size_t i = 0; i < swapChainImages.size(); ++i) {
+			VkImageViewCreateInfo createInfo{};
+			createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			createInfo.image = swapChainImages[i];
+
+			createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // treats the image as a 2D texture. could be 1D, 2D, 3D and cube maps
+			createInfo.format = swapChainImageFormat; // how the data should be interpreted
+
+			// components allows us to swizzle colours around, eg could map all channels to red for a monochrome texture. stick to default mapping for now:
+			createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+			createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+			createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+			createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+			// subresourceRange describes what the image's purpose is, and which part of the image should be accessed. Use our images as color targets without any mipmapping levels or multiple layers:
+			createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			createInfo.subresourceRange.baseMipLevel = 0;
+			createInfo.subresourceRange.levelCount = 1;
+			createInfo.subresourceRange.baseArrayLayer = 0;
+			createInfo.subresourceRange.layerCount = 1; // 1 unless in a stereographic 3D app, then the swap chain would be created with multiple layers, with multiple image views for L/R eyes accessed via different layers
+
+			if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create image views!");
+			}
+		}
 	}
 
 	VkSwapchainKHR swapChain;
@@ -507,6 +539,10 @@ private:
 	}
 
 	void cleanup() {
+		for (VkImageView imageView : swapChainImageViews) {
+			vkDestroyImageView(device, imageView, nullptr); // unlike images, the image views were explicitly created by us, so have to cleanup
+		}
+
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
 
 		vkDestroyDevice(device, nullptr); // the logical device that was interfacing with the physical device
@@ -534,42 +570,3 @@ int main() {
 	}
 	return EXIT_SUCCESS;
 }
-
-/*
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
-
-#include <iostream>
-
-int main() {
-	glfwInit();
-
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	GLFWwindow* window = glfwCreateWindow(800, 600, "Vulkan Window", nullptr, nullptr);
-
-	uint32_t extensionCount = 0;
-	vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-
-	std::cout << extensionCount << " extensions supported\n";
-
-	glm::mat4 matrix;
-	glm::vec4 vec;
-	auto test = matrix * vec;
-
-	while (!glfwWindowShouldClose(window)) {
-		glfwPollEvents();
-	}
-
-	glfwDestroyWindow(window);
-	glfwTerminate();
-
-
-	/*std::cout << "hi" << std::endl;
-	int n;
-	std::cin >> n;
-
-	return 0;
-}*/
