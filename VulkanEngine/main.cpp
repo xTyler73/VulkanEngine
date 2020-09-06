@@ -24,6 +24,8 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
+static std::vector<char> readFile(const std::string& filename);
+
 // proxy function
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
 	// have to lookup its address with vkGetInstanceProcAddr because vkCreateDebugUtilsMessengerEXT is an extension function, so it's not automatically loaded.
@@ -69,7 +71,15 @@ private:
 		createLogicalDevice();
 		createSwapChain();
 		createImageViews();
+		createGraphicsPipeline();
 	}
+
+	void createGraphicsPipeline() {
+		std::vector<char> vertShaderCode = readFile("Shaders/vert.spv");
+		std::vector<char> fragShaderCode = readFile("Shaders/frag.spv");
+		std::cout << "vertShaderCode.size: " << vertShaderCode.size() << ", fragShaderCode.size: " << fragShaderCode.size() << std::endl;
+	}
+
 
 	std::vector<VkImageView> swapChainImageViews; // to use any VkImage (including those in the swap chain) in the render pipeline, we have to create a VkImageView object for each one, so store them.
 	// creates a basic image view for every image in the swap chain so that we can use them as color targets later on
@@ -558,6 +568,24 @@ private:
 		glfwTerminate(); // terminate GLFW itself
 	}
 };
+
+#include <fstream>
+static std::vector<char> readFile(const std::string& filename) {
+	std::ifstream file(filename, std::ios::ate | std::ios::binary); // ate: start reading at end of file, binary: read as binary file to avoid text transformations
+	if (!file.is_open()) {
+		throw std::runtime_error("failed to open file!");
+	}
+
+	size_t fileSize = (size_t)file.tellg(); // since we started reading at the end of the file, the read position can be used to determine the size of the file for allocating the buffer
+	std::vector<char> buffer(fileSize);
+
+	// now we can seek to the beginning and read all bytes at once:
+	file.seekg(0);
+	file.read(buffer.data(), fileSize);
+
+	file.close();
+	return buffer;
+}
 
 int main() {
 	HelloTriangleApplication app;
