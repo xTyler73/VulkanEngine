@@ -77,9 +77,48 @@ private:
 	void createGraphicsPipeline() {
 		std::vector<char> vertShaderCode = readFile("Shaders/vert.spv");
 		std::vector<char> fragShaderCode = readFile("Shaders/frag.spv");
-		std::cout << "vertShaderCode.size: " << vertShaderCode.size() << ", fragShaderCode.size: " << fragShaderCode.size() << std::endl;
+		//std::cout << "vertShaderCode.size: " << vertShaderCode.size() << ", fragShaderCode.size: " << fragShaderCode.size() << std::endl;
+
+		// the compilation and the linking of SPIR-V bytecode to machine code for execution by the GPU doesn't happen until the graphics pipeline is created, so we can create these as
+		// local variables because we're allowed to destroy the shader modules as soon as the pipeline creation is finished. we Destroy them at the end of this function.
+		VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+		VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+		// Shader Stage Creation:
+		VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+		vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		vertShaderStageInfo.module = vertShaderModule;
+		vertShaderStageInfo.pName = "main"; // the name of the entrypoint function to invoke
+		//vertShaderStageInfo.pSpecializationInfo = nullptr; // done automatically anyway from struct initialization. same with for fragment shader below.
+
+		VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+		fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		fragShaderStageInfo.module = fragShaderModule;
+		fragShaderStageInfo.pName = "main"; // the name of the entrypoint function to invoke
+
+		VkPipelineShaderStageCreateInfo shaderStages[2] = { vertShaderStageInfo, fragShaderStageInfo };
+
+		vkDestroyShaderModule(device, fragShaderModule, nullptr);
+		vkDestroyShaderModule(device, vertShaderModule, nullptr);
 	}
 
+	// have to wrap shader code in a VkShaderModule before we can pass it into the pipeline, they're just a thin wrapper aaround the shader bytecode.
+	VkShaderModule createShaderModule(const std::vector<char>& code) {
+		VkShaderModuleCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		createInfo.codeSize = code.size();
+
+		// size of the bytecode is specified in bytes, but the bytecode pointer is a uint32_t pointer (not a char pointer). so cast the pointer.
+		createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data()); // std::vector default allocator already satisfies alignment reqs of uint32_t as well.
+
+		VkShaderModule shaderModule;
+		if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shader module!");
+		}
+		return shaderModule;
+	}
 
 	std::vector<VkImageView> swapChainImageViews; // to use any VkImage (including those in the swap chain) in the render pipeline, we have to create a VkImageView object for each one, so store them.
 	// creates a basic image view for every image in the swap chain so that we can use them as color targets later on
@@ -162,7 +201,7 @@ private:
 		createInfo.presentMode = presentMode;
 		createInfo.clipped = VK_TRUE; // true means that we don't care about the colour of pixels that are obscured (eg another window is in front of them). clipping gives best perf. false only if we really need to read those pixels back and get predictable results
 
-		createInfo.oldSwapchain = VK_NULL_HANDLE; // TODO: old swap chain can become invalid/unoptimized while app is running (eg if window is resized). swap chain needs to be remade from scrath, with a reference to the old one assigned here. for now assume we only ever create 1
+		createInfo.oldSwapchain = VK_NULL_HANDLE; // TODO: old swap chain can become invalid/unoptimized while app is running (eg if window is resized). swap chain needs to be remade from scratch, with a reference to the old one assigned here. for now assume we only ever create 1
 
 		if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create swap chain!");
