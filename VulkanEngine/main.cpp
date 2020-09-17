@@ -1,6 +1,5 @@
-//#include <vulkan/vulkan.h> // commented out as GLFW will include its own definitions and load the vulkan header with it
 #define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+#include <GLFW/glfw3.h> //#include <vulkan/vulkan.h> // commented out as GLFW will include its own definitions and load the vulkan header with it
 
 #include <iostream>
 #include <stdexcept>
@@ -18,7 +17,7 @@ const uint32_t HEIGHT = 600;
 const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
-#ifdef NDEBUG // "not debug" - part of the c++ standard
+#ifdef NDEBUG // "not debug"
 const bool enableValidationLayers = false;
 #else
 const bool enableValidationLayers = true;
@@ -99,6 +98,53 @@ private:
 		fragShaderStageInfo.pName = "main"; // the name of the entrypoint function to invoke
 
 		VkPipelineShaderStageCreateInfo shaderStages[2] = { vertShaderStageInfo, fragShaderStageInfo };
+
+		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		vertexInputInfo.vertexBindingDescriptionCount = 0;
+		vertexInputInfo.pVertexBindingDescriptions = nullptr;
+		vertexInputInfo.vertexAttributeDescriptionCount = 0;
+		vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+
+		VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+		inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; // triangle from every 3 vertices without reuse
+		inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+		VkViewport viewport{};
+		viewport.x = 0.0f;
+		viewport.y = 0.0f;
+		viewport.width = (float)swapChainExtent.width;
+		viewport.height = (float)swapChainExtent.height;
+		viewport.minDepth = 0.0f;
+		viewport.maxDepth = 1.0f;
+
+		VkRect2D scissor{};
+		scissor.offset = {0, 0};
+		scissor.extent = swapChainExtent;
+
+		VkPipelineViewportStateCreateInfo viewportState{};
+		viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		viewportState.viewportCount = 1;
+		viewportState.pViewports = &viewport;
+		viewportState.scissorCount = 1;
+		viewportState.pScissors = &scissor;
+
+		VkPipelineRasterizationStateCreateInfo rasterizer{};
+		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		rasterizer.depthClampEnable = VK_FALSE; // false to discard fragments beyond far/near clipping planes. true clamps to them
+		rasterizer.rasterizerDiscardEnable = VK_FALSE; // false to allow geometry to pass through the rasterizer stage
+		rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // how the fragments are generated for geo: _FILL to fill the area with fragments, _LINE for only polygon edges (wireframe), _POINT for just the points. (last 2 req enaable GPU feature)
+		rasterizer.lineWidth = 1.0f;
+		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+		rasterizer.depthBiasEnable = VK_FALSE;
+		rasterizer.depthBiasConstantFactor = 0.0f;
+		rasterizer.depthBiasClamp = 0.0f;
+		rasterizer.depthBiasSlopeFactor = 0.0f;
+
+
+
 
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		vkDestroyShaderModule(device, vertShaderModule, nullptr);
