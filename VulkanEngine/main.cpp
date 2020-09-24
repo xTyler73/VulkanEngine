@@ -26,7 +26,6 @@ const bool enableValidationLayers = true;
 
 static std::vector<char> readFile(const std::string& filename);
 
-// proxy function
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
 	// have to lookup its address with vkGetInstanceProcAddr because vkCreateDebugUtilsMessengerEXT is an extension function, so it's not automatically loaded.
 	PFN_vkCreateDebugUtilsMessengerEXT func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
@@ -75,6 +74,7 @@ private:
 		createGraphicsPipeline();
 	}
 
+	VkPipeline graphicsPipeline;
 	VkRenderPass renderPass;
 	VkPipelineLayout pipelineLayout;
 	void createGraphicsPipeline() {
@@ -196,6 +196,37 @@ private:
 			throw std::runtime_error("failed to create pipeline layout!");
 		}
 
+
+
+		VkGraphicsPipelineCreateInfo pipelineInfo{};
+		pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		pipelineInfo.stageCount = 2;
+		pipelineInfo.pStages = shaderStages; // reference the earlier array of VkPipelineShaderStageCreateInfo structs
+
+		//reference all of the structures describing the fixed function stage:
+		pipelineInfo.pVertexInputState = &vertexInputInfo;
+		pipelineInfo.pInputAssemblyState = &inputAssembly;
+		pipelineInfo.pViewportState = &viewportState;
+		pipelineInfo.pRasterizationState = &rasterizer;
+		pipelineInfo.pMultisampleState = &multisampling;
+		pipelineInfo.pDepthStencilState = nullptr; // optional
+		pipelineInfo.pColorBlendState = &colorBlending;
+		pipelineInfo.pDynamicState = nullptr; // optional
+
+		pipelineInfo.layout = pipelineLayout; // vulkan handle from earlier
+
+		pipelineInfo.renderPass = renderPass;
+		pipelineInfo.subpass = 0; // index of the subpass where this graphics pipeline will be used
+
+		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // optional, but good to be explicit since we're not creating a new pipeline by deriving from an existing one.
+		pipelineInfo.basePipelineIndex = -1; // ^ also these values are only used if VK_PIPELINE_CREATE_DERIVATIVE_BIT is also set in this pipelineInfo.flags (VkGraphicsPipelineCreateInfo)
+
+		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create graphics pipeline!");
+		}
+
+
+
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		vkDestroyShaderModule(device, vertShaderModule, nullptr);
 	}
@@ -204,10 +235,10 @@ private:
 		VkAttachmentDescription colorAttachment{};
 		colorAttachment.format = swapChainImageFormat;
 		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		
+
 		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // clear the existing values in the attachment to a constant before the start of render
 		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // store rendered contents in memory to be read later (at the end of render)
-		
+
 		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 
@@ -718,6 +749,7 @@ private:
 	}
 
 	void cleanup() {
+		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
 
