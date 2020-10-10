@@ -72,7 +72,32 @@ private:
 		createImageViews();
 		createRenderPass();
 		createGraphicsPipeline();
+		createFrameBuffers();
 	}
+
+	std::vector<VkFramebuffer> swapChainFrameBuffers;
+	void createFrameBuffers() {
+		swapChainFrameBuffers.resize(swapChainImageViews.size());
+		
+		for (size_t i = 0; i < swapChainImageViews.size(); ++i) {
+			VkImageView attachments[1] = { swapChainImageViews[i] }; // only 1 for now, the color attachment
+
+			VkFramebufferCreateInfo frameBufferInfo{};
+			frameBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+			frameBufferInfo.renderPass = renderPass;
+			frameBufferInfo.attachmentCount = 1;
+			frameBufferInfo.pAttachments = attachments;
+			frameBufferInfo.width = swapChainExtent.width;
+			frameBufferInfo.height = swapChainExtent.height;
+			frameBufferInfo.layers = 1;
+
+			if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, &swapChainFrameBuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create framebuffer!");
+			}
+		}
+	}
+
+
 
 	VkPipeline graphicsPipeline;
 	VkRenderPass renderPass;
@@ -138,7 +163,7 @@ private:
 		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 		rasterizer.depthClampEnable = VK_FALSE; // false to discard fragments beyond far/near clipping planes. true clamps to them
 		rasterizer.rasterizerDiscardEnable = VK_FALSE; // false to allow geometry to pass through the rasterizer stage
-		rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // how the fragments are generated for geo: _FILL to fill the area with fragments, _LINE for only polygon edges (wireframe), _POINT for just the points. (last 2 req enaable GPU feature)
+		rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // how the fragments are generated for geo: _FILL to fill the area with fragments, _LINE for only polygon edges (wireframe), _POINT for just the points. (last 2 req enable GPU feature)
 		rasterizer.lineWidth = 1.0f;
 		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
@@ -265,7 +290,7 @@ private:
 		}
 	}
 
-	// have to wrap shader code in a VkShaderModule before we can pass it into the pipeline, they're just a thin wrapper aaround the shader bytecode.
+	// have to wrap shader code in a VkShaderModule before we can pass it into the pipeline, they're just a thin wrapper around the shader bytecode.
 	VkShaderModule createShaderModule(const std::vector<char>& code) {
 		VkShaderModuleCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -749,6 +774,10 @@ private:
 	}
 
 	void cleanup() {
+		for (VkFramebuffer framebuffer : swapChainFrameBuffers) {
+			vkDestroyFramebuffer(device, framebuffer, nullptr);
+		}
+
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
