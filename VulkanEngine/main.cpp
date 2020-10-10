@@ -54,7 +54,7 @@ public:
 private:
 	GLFWwindow* window;
 	void initWindow() {
-		glfwInit(); // init the GLFW library
+		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // GLFW was originally designed to create an OpenGL context, so specifically tell it not to
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // don't allow resize for now, but it's TODO
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Window", nullptr, nullptr); // 4th param = monitor to open window on, 5th param only relevant to OpenGL
@@ -73,12 +73,46 @@ private:
 		createRenderPass();
 		createGraphicsPipeline();
 		createFrameBuffers();
+		createCommandPool();
+		createCommandBuffers();
 	}
+
+
+	std::vector<VkCommandBuffer> commandBuffers;
+	// allocates and records the commands for each swap chain image
+	void createCommandBuffers() {
+		commandBuffers.resize(swapChainFrameBuffers.size());
+
+		VkCommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.commandPool = commandPool;
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; // can be submitted to a queue for execution, but cannot be called from other command buffers
+		allocInfo.commandBufferCount = (uint32_t)commandBuffers.size();
+
+		if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate command buffers!");
+		}
+	}
+
+	VkCommandPool commandPool;
+	void createCommandPool() {
+		QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+
+		VkCommandPoolCreateInfo poolInfo{};
+		poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(); // record commands for drawing
+		poolInfo.flags = 0;
+
+		if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create command pool!");
+		}
+	}
+
 
 	std::vector<VkFramebuffer> swapChainFrameBuffers;
 	void createFrameBuffers() {
 		swapChainFrameBuffers.resize(swapChainImageViews.size());
-		
+
 		for (size_t i = 0; i < swapChainImageViews.size(); ++i) {
 			VkImageView attachments[1] = { swapChainImageViews[i] }; // only 1 for now, the color attachment
 
@@ -774,6 +808,8 @@ private:
 	}
 
 	void cleanup() {
+		vkDestroyCommandPool(device, commandPool, nullptr);
+
 		for (VkFramebuffer framebuffer : swapChainFrameBuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
