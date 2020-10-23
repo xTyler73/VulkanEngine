@@ -43,7 +43,7 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
 		func(instance, debugMessenger, pAllocator);
 }
 
-class HelloTriangleApplication {
+class MainApplication {
 public:
 	void run() {
 		initWindow();
@@ -57,8 +57,14 @@ private:
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // GLFW was originally designed to create an OpenGL context, so specifically tell it not to
-		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // don't allow resize for now, but it's TODO
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Window", nullptr, nullptr); // 4th param = monitor to open window on, 5th param only relevant to OpenGL
+		glfwSetWindowUserPointer(window, this);
+		glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+	}
+
+	static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+		MainApplication* app = reinterpret_cast<MainApplication*>(glfwGetWindowUserPointer(window));
+		app->framebufferResized = true;
 	}
 
 	VkInstance instance;
@@ -514,6 +520,38 @@ private:
 		swapChainExtent = extent;
 	}
 
+	void cleanupSwapChain() {
+		for (VkFramebuffer framebuffer : swapChainFrameBuffers) {
+			vkDestroyFramebuffer(device, framebuffer, nullptr);
+		}
+
+		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+
+		vkDestroyPipeline(device, graphicsPipeline, nullptr);
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+		vkDestroyRenderPass(device, renderPass, nullptr);
+
+		for (VkImageView imageView : swapChainImageViews) {
+			vkDestroyImageView(device, imageView, nullptr); // unlike images, the image views were explicitly created by us, so have to cleanup
+		}
+
+		vkDestroySwapchainKHR(device, swapChain, nullptr);
+	}
+
+	void recreateSwapChain() {
+		vkDeviceWaitIdle(device);
+
+		cleanupSwapChain();
+
+		createSwapChain();
+		createImageViews();
+		createRenderPass();
+		createGraphicsPipeline();
+		createFrameBuffers();
+		//createCommandPool(); // not necessary, vkFreeCommandBuffers function will reuse the existing pool rather than recreating it
+		createCommandBuffers();
+	}
+
 	VkDevice device; // logical device handle to interface with physicalDevice
 	VkQueue graphicsQueue; // queues are automatically created along with the logical device, but still need a handle to interface with the graphics queue. device queues implicitly cleaned up when device is destroyed, so no cleanup necessary
 	VkQueue presentQueue;
@@ -615,7 +653,7 @@ private:
 	}
 
 	const std::vector<const char*> deviceExtensions = { // list of required device extensions, similar to the list of validation layers we want to enable
-			VK_KHR_SWAPCHAIN_EXTENSION_NAME // "VK_KHR_swapchain"
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME // "VK_KHR_swapchain"
 	};
 
 	// checks to make sure GPU is capable of creating a swap chain. by default the availability of a presentation queue implies that the swap chain extension must be supported, but still good to be explicit - we do still have to enable the extension regardless tho
@@ -692,11 +730,12 @@ private:
 		}
 		// width is == to UINT32_MAX here, which is a special value for some window managers that allow us to differ the res of the swap chain images and res of the window.
 		// so clamp WIDTH and HEIGHT to the min/max extents that are supported by the implementation by picking the res that best matches the window within the minImageExtent and maxImageExtent bounds
-		VkExtent2D actualExtent = { WIDTH,HEIGHT };
+		int width, height;
+		glfwGetFramebufferSize(window, &width, &height);
+		VkExtent2D actualExtent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
 		actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
 		actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
 		return actualExtent;
-
 	}
 
 
@@ -741,7 +780,7 @@ private:
 		createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT; // all except SEVERITY_INFO_BIT_EXT to leave out verbose general debug info
 		createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT; // all
 		createInfo.pfnUserCallback = debugCallback;
-		createInfo.pUserData = nullptr; // optionally passsed along to the callback function, eg could pass in a pointer to HelloTriangleApplication
+		createInfo.pUserData = nullptr; // optionally passsed along to the callback function, eg could pass in a pointer to MainApplication
 		// see https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html#VK_EXT_debug_utils for more possibilities about ways to configure validation layer messages / debug callbacks
 	}
 
@@ -766,7 +805,7 @@ private:
 		VkApplicationInfo appInfo{}; // filling out the VkApplicationInfo struct is technically optional, but may provide some info to the driver in order to optimize our specific application
 		// appInfo.pNext = nullptr; // is nullptr by default -- pNext will point to extension information in the future
 		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-		appInfo.pApplicationName = "Hello Triangle";
+		appInfo.pApplicationName = "Main Application";
 		appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 		appInfo.pEngineName = "No Engine";
 		appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -887,12 +926,19 @@ private:
 
 		vkDeviceWaitIdle(device);
 	}
-
+	
+	bool framebufferResized = false;
 	void drawFrame() {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
 		uint32_t imageIndex;
-		vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex); // acquire image from swap chain
+		VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex); // acquire image from swap chain
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) { // no longer possible to present to it, we must recreate. VK_SUBOPTIMAL_KHR can continue for now
+			recreateSwapChain();
+			return; // try again next frame
+		} else if (result != VK_SUCCESS /*&& result != VK_ERROR_OUT_OF_DATE_KHR*/) {
+			throw std::runtime_error("failed to acquire swap chain image!");
+		}
 
 		if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) { // if a previous frame is using this image
 			vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
@@ -931,7 +977,13 @@ private:
 		presentInfo.pImageIndices = &imageIndex;
 		presentInfo.pResults = nullptr;
 
-		vkQueuePresentKHR(presentQueue, &presentInfo); // submit request to present an image to the swap chain
+		result = vkQueuePresentKHR(presentQueue, &presentInfo); // submit request to present an image to the swap chain
+		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+			framebufferResized = false;
+			recreateSwapChain();
+		} else if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to acquire swap chain image!");
+		}
 
 		vkQueueWaitIdle(presentQueue);
 
@@ -939,6 +991,8 @@ private:
 	}
 
 	void cleanup() {
+		cleanupSwapChain();
+
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
 			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
@@ -947,20 +1001,6 @@ private:
 
 		vkDestroyCommandPool(device, commandPool, nullptr);
 
-		for (VkFramebuffer framebuffer : swapChainFrameBuffers) {
-			vkDestroyFramebuffer(device, framebuffer, nullptr);
-		}
-
-		vkDestroyPipeline(device, graphicsPipeline, nullptr);
-		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-		vkDestroyRenderPass(device, renderPass, nullptr);
-
-		for (VkImageView imageView : swapChainImageViews) {
-			vkDestroyImageView(device, imageView, nullptr); // unlike images, the image views were explicitly created by us, so have to cleanup
-		}
-
-		vkDestroySwapchainKHR(device, swapChain, nullptr);
-
 		vkDestroyDevice(device, nullptr); // the logical device that was interfacing with the physical device
 
 		if (enableValidationLayers) {
@@ -968,8 +1008,8 @@ private:
 		}
 
 		vkDestroySurfaceKHR(instance, surface, nullptr); // GLFW doesn't offer a special funtion for destroying the surface - do through original vk
-
 		vkDestroyInstance(instance, nullptr); // instance should only be destroyed right before the program exits. all other Vulkan resources should be cleaned up before this instance itself!
+
 		glfwDestroyWindow(window); // cleanup resources by destroying window
 		glfwTerminate(); // terminate GLFW itself
 	}
@@ -994,7 +1034,7 @@ static std::vector<char> readFile(const std::string& filename) {
 }
 
 int main() {
-	HelloTriangleApplication app;
+	MainApplication app;
 
 	try {
 		app.run();
