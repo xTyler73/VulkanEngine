@@ -539,6 +539,15 @@ private:
 	}
 
 	void recreateSwapChain() {
+		{ // Handle if minimized:
+			int width = 0, height = 0;
+			glfwGetFramebufferSize(window, &width, &height);
+			while (width == 0 || height == 0) { // while Minimized (framebuffer size has special value of 0)
+				glfwGetFramebufferSize(window, &width, &height);
+				glfwWaitEvents();
+			}
+		}
+
 		vkDeviceWaitIdle(device);
 
 		cleanupSwapChain();
