@@ -117,6 +117,7 @@ private:
 		createGraphicsPipeline();
 		createFrameBuffers();
 		createCommandPool();
+		createVertexBuffer();
 		createCommandBuffers();
 		createSyncObjects();
 	}
@@ -149,6 +150,45 @@ private:
 				throw std::runtime_error("Failed to create synchronization objects for a frame!");
 			}
 		}
+	}
+
+
+	VkBuffer vertexBuffer;
+	VkDeviceMemory vertexBufferMemory;
+	void createVertexBuffer() {
+		VkBufferCreateInfo bufferInfo{};
+		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+		bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		if (vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create vertex buffer!");
+		}
+
+		VkMemoryRequirements memReqs;
+		vkGetBufferMemoryRequirements(device, vertexBuffer, &memReqs);
+
+		VkMemoryAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInfo.allocationSize = memReqs.size;
+		allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to find allocate vertex buffer memory!");
+		}
+		vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+	}
+
+	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+		VkPhysicalDeviceMemoryProperties memProperties;
+		vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+		for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i)
+			if ((typeFilter & (1 << i)) && ((memProperties.memoryTypes[i].propertyFlags & properties) == properties))
+				return i;
+
+		throw std::runtime_error("Failed to find suitable memory type!");
 	}
 
 
@@ -1039,6 +1079,9 @@ private:
 
 	void cleanup() {
 		cleanupSwapChain();
+
+		vkDestroyBuffer(device, vertexBuffer, nullptr);
+		vkFreeMemory(device, vertexBufferMemory, nullptr);
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
